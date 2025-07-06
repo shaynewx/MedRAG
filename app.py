@@ -13,6 +13,10 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from datetime import datetime
 import pytz
+import json
+
+# 用文件保存历史记录
+HISTORY_FILE = "chat_history.json"
 
 
 # 关闭 huggingface 的 加速tokenizers编码
@@ -44,6 +48,18 @@ class StreamHandler(BaseCallbackHandler):
     def on_llm_new_token(self, token: str, **kwargs) -> None:
         self.text += token
         self.container.markdown(self.text + "▌")  # 显示流式内容+光标
+
+# 加载历史
+def load_chat_history():
+    if os.path.exists(HISTORY_FILE):
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return []
+
+# 保存历史
+def save_chat_history(history):
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(history, f, ensure_ascii=False, indent=2)
 
 
 def main():
@@ -82,7 +98,7 @@ def main():
 
     # 构造 Streamlit 聊天 以及 对话历史
     if "history" not in st.session_state:
-        st.session_state["history"] = []
+        st.session_state["history"] = load_chat_history()
 
     # 输入框交互
     user_input = st.chat_input("请输入你的问题...")
@@ -143,6 +159,6 @@ def main():
             st.code(answer, language="markdown")
 
 
-# TODO: 永久储存历史会话；检索可加入稀疏检索然后进行多路召回
+# TODO: 当前第二次提问后前一次推理过程被覆盖无法查看；检索可加入稀疏检索然后进行多路召回
 if __name__ == "__main__":
     main()
