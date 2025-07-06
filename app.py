@@ -2,7 +2,6 @@ import os
 import streamlit as st
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.output_parsers import StrOutputParser
 from langchain_core.callbacks.base import BaseCallbackHandler
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
@@ -49,17 +48,19 @@ class StreamHandler(BaseCallbackHandler):
         self.text += token
         self.container.markdown(self.text + "▌")  # 显示流式内容+光标
 
-# 加载历史
-def load_chat_history():
+
+# 加载所有历史记录
+def load_all_histories():
     if os.path.exists(HISTORY_FILE):
         with open(HISTORY_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
-    return []
+    return {}
 
-# 保存历史
-def save_chat_history(history):
+
+# 保存
+def save_all_histories(histories):
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-        json.dump(history, f, ensure_ascii=False, indent=2)
+        json.dump(histories, f, ensure_ascii=False, indent=2)
 
 
 def main():
@@ -67,6 +68,35 @@ def main():
     st.set_page_config(page_title="医疗助手RAG", layout="wide")
     st.title("医疗系统问答助手 ")
     st.write("请输入你的问题，支持多轮追问。")
+
+    # 设置Sidebar用于管理多个对话
+    st.sidebar.title("🧾 对话管理")
+
+    # 加载全部历史
+    all_histories = load_all_histories()
+
+    # 获取所有对话 ID（默认标题显示前几句）
+    chat_ids = list(all_histories.keys())
+    chat_titles = [
+        all_histories[cid][0]["content"][:20] + "..." if all_histories[cid] else cid
+        for cid in chat_ids
+    ]
+
+    # 显示所有已有对话作为按钮
+    for cid, title in zip(chat_ids, chat_titles):
+        if st.sidebar.button(title, key=f"chat_btn_{cid}"):
+            st.session_state["chat_id"] = cid
+            st.session_state["history"] = all_histories.get(cid, [])
+            st.rerun()
+
+    # 新建对话按钮
+    if st.sidebar.button("➕ 新建对话"):
+        new_id = f"chat_{len(chat_ids)+1}"
+        all_histories[new_id] = []
+        save_all_histories(all_histories)
+        st.session_state["chat_id"] = new_id
+        st.session_state["history"] = []
+        st.rerun()
 
     # 加载 FAISS
     vectorstore = load_vectorstore()
@@ -79,8 +109,6 @@ def main():
         model="deepseek-chat",
         streaming=True,
     )
-
-    output_parser = StrOutputParser()  # 把生成结果解析为纯文本字符串
 
     prompt = ChatPromptTemplate.from_messages(
         [
@@ -97,8 +125,13 @@ def main():
     )
 
     # 构造 Streamlit 聊天 以及 对话历史
-    if "history" not in st.session_state:
-        st.session_state["history"] = load_chat_history()
+    if "chat_id" not in st.session_state:
+        if chat_ids:
+            st.session_state["chat_id"] = chat_ids[0]
+            st.session_state["history"] = all_histories.get(chat_ids[0], [])
+        else:
+            st.session_state["chat_id"] = "chat_1"
+            st.session_state["history"] = []
 
     # 输入框交互
     user_input = st.chat_input("请输入你的问题...")
@@ -139,8 +172,14 @@ def main():
             inputs = {"history": st.session_state["history"], "input": full_input}
             answer = chain.invoke(inputs)["text"]
 
-        # 只 append assistant 输出
+        # 添加回答
         st.session_state["history"].append({"role": "assistant", "content": answer})
+
+        # 保存到多会话总记录中
+        all_histories[st.session_state["chat_id"]] = st.session_state["history"]
+        save_all_histories(all_histories)
+        # 刷新
+        st.rerun()
 
         # 推理过程展示
         with st.expander("模型推理过程（点击展开）"):
