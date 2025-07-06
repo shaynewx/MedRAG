@@ -119,7 +119,7 @@ def main():
             MessagesPlaceholder(variable_name="history"),
             (
                 "user",
-                "{input}\n请详细说明你是如何得出答案的，展示你的思考过程。如果检索内容无关，请说明理由。",
+                "{input}\n请结合备注，详细说明你是如何得出jie'lun的，展示你的思考过程。如果检索内容无关，请说明理由。",
             ),
         ]
     )
@@ -136,10 +136,34 @@ def main():
     # 输入框交互
     user_input = st.chat_input("请输入你的问题...")
 
-    # 展示所有历史消息
-    for msg in st.session_state["history"]:
+    # 展示所有历史消息以及推理过程
+    history = st.session_state["history"]
+    for i, msg in enumerate(history):
         with st.chat_message("user" if msg["role"] == "user" else "assistant"):
             st.write(msg["content"])
+
+            # 如果当前是最后一条 assistant 消息，可选择展示推理信息
+            is_last = i == len(history) - 1
+            is_assistant = msg["role"] == "assistant"
+            if is_last and is_assistant and "last_answer_meta" in st.session_state:
+                meta = st.session_state["last_answer_meta"]
+                with st.expander("🧠 模型推理过程（点击展开）"):
+                    st.markdown("**原始用户问题：**")
+                    st.code(meta["user_input"], language="markdown")
+
+                    st.markdown("**检索到的内容片段：**")
+                    for j, chunk in enumerate(meta["dense_results"]):
+                        st.markdown(f"**片段 {j+1}:**")
+                        st.code(chunk, language="markdown")
+
+                    st.markdown("**传给模型的完整 Prompt 输入：**")
+                    st.code(meta["full_input"], language="markdown")
+
+                    st.markdown("**最终回答：**")
+                    st.code(meta["answer"], language="markdown")
+
+                # 展示后立即清除
+                del st.session_state["last_answer_meta"]
 
     if user_input:
         # 展示用户提问
@@ -149,7 +173,8 @@ def main():
         beijing_full_time, time_period = get_beijing_time()
 
         # 进行稠密检索 chunk
-        dense_results = vectorstore.similarity_search(user_input, k=8)
+        # TODO:二次及以后检索可以优化的地方：带入历史对话中重要信息去检索；加入稀疏检索
+        dense_results = vectorstore.similarity_search(user_input, k=10)
         context = "\n\n".join([doc.page_content for doc in dense_results])
 
         # 拼接 prompt 输入
@@ -172,6 +197,14 @@ def main():
             inputs = {"history": st.session_state["history"], "input": full_input}
             answer = chain.invoke(inputs)["text"]
 
+            # ✅ 储存推理细节（只能一轮展示）
+            st.session_state["last_answer_meta"] = {
+                "user_input": user_input,
+                "dense_results": [doc.page_content for doc in dense_results],
+                "full_input": full_input,
+                "answer": answer,
+            }
+
         # 添加回答
         st.session_state["history"].append({"role": "assistant", "content": answer})
 
@@ -181,23 +214,6 @@ def main():
         # 刷新
         st.rerun()
 
-        # 推理过程展示
-        with st.expander("模型推理过程（点击展开）"):
-            st.markdown("**原始用户问题：**")
-            st.code(user_input, language="markdown")
 
-            st.markdown("**检索到的内容片段：**")
-            for i, doc in enumerate(dense_results):
-                st.markdown(f"**片段 {i+1}:**")
-                st.code(doc.page_content, language="markdown")
-
-            st.markdown("**传给模型的完整 Prompt 输入：**")
-            st.code(full_input, language="markdown")
-
-            st.markdown("**最终回答：**")
-            st.code(answer, language="markdown")
-
-
-# TODO: 当前第二次提问后前一次推理过程被覆盖无法查看；检索可加入稀疏检索然后进行多路召回
 if __name__ == "__main__":
     main()
