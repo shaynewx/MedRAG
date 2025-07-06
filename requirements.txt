@@ -1,0 +1,12 @@
+streamlit
+langchain
+langchain-openai
+langchain-community
+langchain-core
+langchain-huggingface
+huggingface-hub
+sentence-transformers
+faiss-cpu
+openai
+python-dotenv
+pandas

@@ -5,11 +5,8 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.callbacks.base import BaseCallbackHandler
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
-from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.chains import LLMChain
-from langchain.memory import ConversationBufferMemory
 from dotenv import load_dotenv
-from openai import OpenAI
 from datetime import datetime
 import pytz
 import json
@@ -173,7 +170,6 @@ def main():
         beijing_full_time, time_period = get_beijing_time()
 
         # 进行稠密检索 chunk
-        # TODO:二次及以后检索可以优化的地方：带入历史对话中重要信息去检索；加入稀疏检索
         dense_results = vectorstore.similarity_search(user_input, k=10)
         context = "\n\n".join([doc.page_content for doc in dense_results])
 
@@ -193,11 +189,11 @@ def main():
             llm.callbacks = [stream_handler]
 
             # 构造 LLM 输入（历史记录+本轮完整上下文），并进行推理
-            chain = LLMChain(prompt=prompt, llm=llm)
+            chain = prompt | llm
             inputs = {"history": st.session_state["history"], "input": full_input}
-            answer = chain.invoke(inputs)["text"]
+            answer = chain.invoke(inputs).content
 
-            # ✅ 储存推理细节（只能一轮展示）
+            # 储存推理细节（只能一轮展示）
             st.session_state["last_answer_meta"] = {
                 "user_input": user_input,
                 "dense_results": [doc.page_content for doc in dense_results],
@@ -211,7 +207,8 @@ def main():
         # 保存到多会话总记录中
         all_histories[st.session_state["chat_id"]] = st.session_state["history"]
         save_all_histories(all_histories)
-        # 刷新
+
+        # 刷新，显示会话信息
         st.rerun()
 
 
