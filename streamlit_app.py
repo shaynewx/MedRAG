@@ -21,6 +21,9 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 @st.cache_resource
 def load_vectorstore():
+    """
+    返回向量库, 包含chunks、对应向量、向量索引结构
+    """
     embedding_model = HuggingFaceEmbeddings(model_name="moka-ai/m3e-base")
     return FAISS.load_local(
         "data/faiss_index", embedding_model, allow_dangerous_deserialization=True
@@ -36,6 +39,7 @@ def get_beijing_time():
     return now.strftime("%Y-%m-%d %H:%M"), now.strftime("%p")
 
 
+# 继承 langchain 提供的 BaseCallbackHandler，每生成一个token就触发一次回调
 class StreamHandler(BaseCallbackHandler):
     def __init__(self, container):
         self.container = container
@@ -54,7 +58,7 @@ def load_all_histories():
     return {}
 
 
-# 保存
+# 保存聊天记录
 def save_all_histories(histories):
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(histories, f, ensure_ascii=False, indent=2)
@@ -75,7 +79,7 @@ def main():
     # 获取所有对话 ID（默认标题显示前几句）
     chat_ids = list(all_histories.keys())
     chat_titles = [
-        all_histories[cid][0]["content"][:20] + "..." if all_histories[cid] else cid
+        all_histories[cid][0]["content"][:20] if all_histories[cid] else cid
         for cid in chat_ids
     ]
 
@@ -121,7 +125,7 @@ def main():
         ]
     )
 
-    # 构造 Streamlit 聊天 以及 对话历史
+    # 用户首次进入streamlit时，初始化 Streamlit 聊天 以及 对话历史
     if "chat_id" not in st.session_state:
         if chat_ids:
             st.session_state["chat_id"] = chat_ids[0]
